@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: buysmart-backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: buysmart-backend
+  template:
+    metadata:
+      labels:
+        app: buysmart-backend
+    spec:
+      containers:
+      - name: buysmart-backend
+        image: buysmartacr.azurecr.io/buysmart-backend:latest
+        ports:
+        - containerPort: 8081
