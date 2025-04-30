@@ -1,60 +1,39 @@
-pipeline {
-    agent any
+node {
+    // Define environment variables
+    def DOCKER_IMAGE = "yourdockerhub/yourimage:latest"
+    def K8S_NAMESPACE = "your-namespace"
+    def K8S_DEPLOYMENT = "your-deployment"
 
-    environment {
-        IMAGE_NAME = "buysmart-backend"
-        ACR_NAME = "youracr.azurecr.io"
-        ACR_REPO = "${ACR_NAME}/${IMAGE_NAME}"
-        IMAGE_TAG = "v${BUILD_NUMBER}"
-        K8S_DEPLOYMENT = "k8s/deployment.yaml"
-    }
-
-    stages {
-        stage('Checkout Code') {
-            steps {
-                checkout scm
-            }
+    try {
+        stage('Checkout') {
+            // Checkout the code from your repository
+            checkout scm
         }
 
         stage('Build Docker Image') {
-            steps {
-                sh 'docker build -t $ACR_REPO:$IMAGE_TAG .'
+            // Build Docker image from the Dockerfile
+            sh "docker build -t ${DOCKER_IMAGE} ."
+        }
+
+        stage('Push Docker Image') {
+            // Login and push the image to Docker Hub
+            withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD')]) {
+                sh "docker login -u ${DOCKER_USERNAME} -p ${DOCKER_PASSWORD}"
+                sh "docker push ${DOCKER_IMAGE}"
             }
         }
 
-        stage('Login to ACR') {
-            steps {
-                sh 'az acr login --name youracr'
+        stage('Deploy to Kubernetes') {
+            // Deploy the Docker image to Kubernetes
+            withCredentials([file(credentialsId: 'k8s-config', variable: 'K8S_CONFIG')]) {
+                sh "kubectl --kubeconfig=${K8S_CONFIG} set image deployment/${K8S_DEPLOYMENT} ${DOCKER_IMAGE}"
             }
         }
-
-        stage('Push to ACR') {
-            steps {
-                sh 'docker push $ACR_REPO:$IMAGE_TAG'
-            }
-        }
-
-        stage('Update Kubernetes Manifests') {
-            steps {
-                script {
-                    sh "sed -i 's|image: .*$|image: $ACR_REPO:$IMAGE_TAG|' ${K8S_DEPLOYMENT}"
-                }
-            }
-        }
-
-        stage('Deploy to AKS') {
-            steps {
-                sh 'kubectl apply -f k8s/'
-            }
-        }
-    }
-
-    post {
-        success {
-            echo "Deployment complete: $ACR_REPO:$IMAGE_TAG"
-        }
-        failure {
-            echo "Pipeline failed"
-        }
+    } catch (Exception e) {
+        currentBuild.result = 'FAILURE'
+        throw e
+    } finally {
+        // Clean workspace after build
+        cleanWs()
     }
 }
